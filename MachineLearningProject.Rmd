@@ -1,0 +1,95 @@
+---
+title: "MachineLearningProject"
+author: "Susan Wise"
+date: "December 2014"
+output: html_document
+---
+**Project Assignment**
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+The goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: 
+http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+**Preparing the Data**
+The data for this project come from this source: 
+http://groupware.les.inf.puc-rio.br/har
+
+THe first step was to retrieve the data from the URLs provided. The following code will unload both the data for training the model as well as the data for testing the model to create the Project Data submission files.
+
+```{r message=FALSE, warning=FALSE}
+setInternet2(use=TRUE)
+##download train and test data from Urls 
+trainURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+##get training data
+temp <- tempfile()
+download.file(trainURL, temp)
+trainData<- read.csv(temp)
+unlink(temp)
+##get testing data
+temp <- tempfile()
+download.file(testURL, temp)
+testData<- read.csv(temp)
+unlink(temp)
+
+##look at data volume and "classe" values - Training
+dim(trainData);summary(trainData$classe)
+```
+After looking at the dimensions of the data and performing preliminary analysis using the Summary Function and viewing the data, I determined I needed to 'tidy' up the data to remove some noise and volume before I split the file into a trainind and cross validation file.
+
+Following steps to Tidy up the data.
+-identify and remove Columns with Near Zero Variance
+-remove columns with NA values
+-remove the first 7 columns since they appear to be related to Identifying the Data and not the activity being classified.
+
+Once the data was cleaned up, I split the data into two parts - 70% to be used for Fitting the model and 30% to Cross Validate the model.
+```{r message=FALSE, warning=FALSE}
+library(caret)
+## Tidy the Data
+zerovar <- nearZeroVar(trainData)
+traintemp1 <- trainData[,-zerovar]
+traintemp2 <- traintemp1[,colSums(is.na(traintemp1))==0]
+trainTidyData <- traintemp2[,-c(1:7)]
+
+##split Tidy Data into  train and cross validation data
+## partition data (70% train and 30% test)
+trainI <- createDataPartition(y = trainTidyData$classe, p=0.70, list=FALSE)
+trainingData <- trainTidyData[trainI,]
+crossValData <- trainTidyData[-trainI,]
+```
+**Fit and Validate the Model**
+I decided to use Random Forest to fit my model.  Even after cleaning the data by removing columns, there were still over 50 columns of data. Based on the data volume, even though Random Forest is resource intensive, it will return a model with high accuracy.
+```{r message=FALSE, warning=FALSE}
+## fit the model
+ctrl = trainControl(method='cv',number=8)
+modelFit <- train(classe ~ ., data=trainingData, 
+                  method="rf", trControl=ctrl)
+## inspect results of modelFit
+modelFit$finalModel
+```
+Based on the Final Model, I estimate the Out of Bounds error rate to be less than 1%.  For Cross validation, I ran the model against the data set aside for Cross Validation and reviewed the results using ConfusionMatrix.
+
+Looking at the Confusion Matrix, you can see that the model has a 99% accuracy rate.
+```{r message=FALSE, warning=FALSE}
+##test model and review results using COnfusion Matrix
+predictCrossVal <- predict(modelFit, crossValData)
+confusionMatrix(predictCrossVal, crossValData$classe)
+```
+**Run Prediction and Create Final Files**
+With the model validated, the last step is to predict the project test values and create the project submission files.
+```{r message=FALSE, warning=FALSE}
+## run predictions on project test file - write results to file
+predictValues <- predict(modelFit, testData)
+answers <- as.character(predictValues)
+
+pml_write_files = function(x){
+        n = length(x)
+        for(i in 1:n){
+                filename = paste0("problem_id_",i,".txt")
+                write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+        }
+}
+
+pml_write_files(answers)
+```
